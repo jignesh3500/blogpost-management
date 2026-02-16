@@ -11,16 +11,29 @@ const Dashboard = () => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch all posts from db.json
+  const handleCreatePostClick = () => {
+    navigate("/create-post");
+  };
+
+  const handleEditPost = (post) => {
+    navigate(`/edit-post/${post.id}`);
+  };
+
+  const handleReadMore = (post) => {
+    navigate(`/post/${post.id}`);
+  };
+
   const fetchPosts = async () => {
     try {
       setLoading(true);
       const response = await fetch("http://localhost:3000/posts");
       const data = await response.json();
-      setPosts(data);
+      // Ensure data is an array
+      setPosts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching posts:", error);
       toast.error("Failed to fetch posts");
+      setPosts([]);
     } finally {
       setLoading(false);
     }
@@ -36,29 +49,59 @@ const Dashboard = () => {
     navigate("/login");
   };
 
-  // Delete post
   const handleDeletePost = async (id) => {
-    try {
-      await fetch(`http://localhost:3000/posts/${id}`, {
-        method: "DELETE",
-      });
-      setPosts(posts.filter((post) => post.id !== id));
-      toast.success("Post deleted successfully");
-    } catch (error) {
-      console.error("Error deleting post:", error);
-      toast.error("Failed to delete post");
+    if (window.confirm("Are you sure you want to delete this post?")) {
+      try {
+        await fetch(`http://localhost:3000/posts/${id}`, {
+          method: "DELETE",
+        });
+        setPosts(posts.filter((post) => post.id !== id));
+        toast.success("Post deleted successfully");
+      } catch (error) {
+        console.error("Error deleting post:", error);
+        toast.error("Failed to delete post");
+      }
     }
   };
 
-  // Get current user from localStorage
+  // FIXED: Properly handle localStorage data with error handling
   const loginData = JSON.parse(localStorage.getItem("loginData") || "{}");
-  const currentUser = loginData?.email?.split("@")[0] || "User";
+  
+  // FIXED: Ensure authData is always an array
+  let authData = [];
+  try {
+    const storedAuth = localStorage.getItem("authData");
+    if (storedAuth) {
+      const parsed = JSON.parse(storedAuth);
+      authData = Array.isArray(parsed) ? parsed : [];
+    }
+  } catch (error) {
+    console.error("Error parsing authData:", error);
+    authData = [];
+  }
 
-  // Calculate stats
-  const totalPosts = posts.length;
-  const userPosts = posts.filter(
-    (post) => post.author?.toLowerCase() === currentUser.toLowerCase()
-  ).length;
+  let currentUser = "";
+
+  if (loginData?.email) {
+    // FIXED: Safe check before using find method
+    const foundUser = Array.isArray(authData) 
+      ? authData.find((user) => user && user.email === loginData.email)
+      : null;
+    currentUser = foundUser?.username || loginData.email.split("@")[0];
+  }
+
+  // FIXED: Ensure posts is an array before using length and filter
+  const totalPosts = Array.isArray(posts) ? posts.length : 0;
+  
+  const userPosts = Array.isArray(posts) && currentUser
+    ? posts.filter((post) => {
+        if (!post || !post.author) return false;
+        const postAuthor = post.author.toLowerCase().trim();
+        const currentUserLower = currentUser.toLowerCase().trim();
+        return postAuthor === currentUserLower;
+      }).length
+    : 0;
+    
   const communityPosts = totalPosts - userPosts;
 
   return (
@@ -68,7 +111,7 @@ const Dashboard = () => {
       <main className="dashboard-main">
         <div className="dashboard-welcome">
           <div className="welcome-text">
-            <h1>Welcome to Your Dashboard, {currentUser}!</h1>
+            <h1>Welcome to Your Dashboard!</h1>
             <p>
               Manage your posts, track engagement, and connect with your
               audience.
@@ -81,12 +124,10 @@ const Dashboard = () => {
             <h3>Total Posts</h3>
             <span className="dash-number">{totalPosts}</span>
           </div>
-
           <div className="dash-card">
             <h3>Your Stories</h3>
             <span className="dash-number">{userPosts}</span>
           </div>
-
           <div className="dash-card">
             <h3>Community Posts</h3>
             <span className="dash-number">{communityPosts}</span>
@@ -96,55 +137,66 @@ const Dashboard = () => {
         <section className="posts-section">
           <div className="section-header">
             <h2 className="section-title">Recent Feed</h2>
-            <button className="create-shortcut-btn">
+            <button
+              className="create-shortcut-btn"
+              onClick={handleCreatePostClick}
+            >
               <FaPlus /> New Post
             </button>
           </div>
 
           <div className="posts-grid">
             {loading ? (
-              <div className="loading-state">Loading posts...</div>
-            ) : posts.length > 0 ? (
+              <div className="loading-spinner">Loading posts...</div>
+            ) : Array.isArray(posts) && posts.length > 0 ? (
               posts.map((post) => (
-                <div className="post-card" key={post.id}>
+                <div className="post-card" key={post?.id || Math.random()}>
                   <div className="post-image-container">
                     <img
-                      src={post.image || "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=500"}
-                      alt={post.title}
+                      src={post?.image || "https://via.placeholder.com/300"}
+                      alt={post?.title || "Post image"}
                       className="post-card-image"
+                      onError={(e) => {
+                        e.target.src = "https://via.placeholder.com/300";
+                      }}
                     />
-
                     <div className="post-actions">
                       <button
                         className="action-btn edit-btn"
                         title="Edit Post"
+                        onClick={() => post?.id && handleEditPost(post)}
                       >
                         <MdEdit size={22} color="#ffffff" />
                       </button>
-
                       <button
                         className="action-btn delete-btn"
                         title="Delete Post"
-                        onClick={() => handleDeletePost(post.id)}
+                        onClick={() => post?.id && handleDeletePost(post.id)}
                       >
                         <MdDelete size={20} color="#ffffff" />
                       </button>
                     </div>
                   </div>
-
                   <div className="post-card-content">
                     <div className="post-meta">
-                      <span className="post-author">By {post.author || "Anonymous"}</span>
+                      <span className="post-author">
+                        By {post?.author || "Anonymous"}
+                      </span>
                       <span className="post-date">
-                        {post.date || new Date(post.createdAt || Date.now()).toLocaleDateString()}
+                        {post?.date ||
+                          (post?.createdAt 
+                            ? new Date(post.createdAt).toLocaleDateString()
+                            : new Date().toLocaleDateString())}
                       </span>
                     </div>
-
-                    <h3 className="post-card-title">{post.title}</h3>
-                    <p className="post-card-description">
-                      {post.description || post.content || post.excerpt}
-                    </p>
-                    <button className="read-more-btn">Read More</button>
+                    <h3 className="post-card-title">{post?.title || "Untitled"}</h3>
+                    <p className="post-card-description">{post?.description || "No description available"}</p>
+                    <button
+                      className="read-more-btn"
+                      onClick={() => post?.id && handleReadMore(post)}
+                    >
+                      Read More
+                    </button>
                   </div>
                 </div>
               ))
